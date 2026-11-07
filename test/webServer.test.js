@@ -9,8 +9,10 @@ import {
 } from "vitest";
 import JSZip from "jszip";
 import { fileURLToPath } from "node:url";
-import { createWebServer } from "../src/web/server.js";
+import { createWebServer, formatApiError } from "../src/web/server.js";
 import { createSample3mf } from "./fixtures/sample3mf.js";
+import { SYSTEM_PROMPT } from "../src/llm/prompt.js";
+import { LLM_RESPONSE_FORMAT } from "../src/llm/responseSchema.js";
 
 describe("local web UI server", () => {
   let server;
@@ -101,6 +103,74 @@ describe("local web UI server", () => {
       fileName: "fixture.3mf",
       outputWritten: false,
     });
+  });
+
+  it("runs in compact context and reports its estimate and omitted fields", async () => {
+    const mockResponsePath = fileURLToPath(
+      new URL("./fixtures/mockResponse.json", import.meta.url),
+    );
+    vi.stubEnv("LLM_MOCK_RESPONSE", mockResponsePath);
+    const response = await fetch(`${baseUrl}/api/optimize`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-file-name": "fixture.3mf",
+        "x-slicer-provider": "groq",
+        "x-slicer-model": "qwen/qwen3.8-27b",
+        "x-slicer-context": "compact",
+        "x-slicer-intent": JSON.stringify({ primary_goal: "balanced" }),
+      },
+      body: projectBuffer,
+    });
+    const data = await response.json();
+    expect(response.status).toBe(200);
+    expect(data.context.mode).toBe("compact");
+    expect(data.context.estimatedInputTokens).toBeLessThan(7_000);
+    expect(data.context.omitted.plateImages).toBe(1);
+    vi.unstubAllEnvs();
+  });
+
+  it("builds a complete prompt inspection response without requiring an API key", async () => {
+    const response = await fetch(`${baseUrl}/api/prompt`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-file-name": "fixture.3mf",
+        "x-slicer-intent": JSON.stringify({
+          primary_goal: "custom",
+          free_text_description: "Keep it stiff.",
+        }),
+      },
+      body: projectBuffer,
+    });
+    const data = await response.json();
+    expect(response.status).toBe(200);
+    expect(data.messages[0].content).toBe(SYSTEM_PROMPT);
+    expect(data.responseFormat).toEqual(LLM_RESPONSE_FORMAT);
+    expect(data.messages[1].content).toContainEqual({
+      type: "image_url",
+      image_url: {
+        url: `data:image/png;base64,${Buffer.from("full-resolution-preview").toString("base64")}`,
+        detail: "low",
+      },
+    });
+    expect(
+      data.messages[1].content.map((item) => item.text ?? "").join("\n"),
+    ).toContain("free_text_description: Keep it stiff.");
+  });
+
+  it.each([
+    [
+      "GROQ_INPUT_TOKEN_LIMIT",
+      "Retry with Compact Context (Fit 7k Token Limit)",
+    ],
+    ["GROQ_RATE_LIMIT", "Copy Full Prompt for ChatGPT / Gemini"],
+  ])("returns actionable guidance for %s", (code, expectedSuggestion) => {
+    const result = formatApiError(Object.assign(new Error("quota"), { code }));
+    expect(result.code).toBe(code);
+    expect(result.suggestions.map((suggestion) => suggestion.label)).toContain(
+      expectedSuggestion,
+    );
   });
 
   it("rejects non-3mf uploads and unknown routes", async () => {

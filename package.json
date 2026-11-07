@@ -27,6 +27,7 @@
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{js,json,md}\"",
     "web": "node bin/slicer-copilot-web",
+    "build": "node scripts/build-web.js",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "prepare": "husky install"

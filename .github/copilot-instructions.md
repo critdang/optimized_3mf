@@ -29,6 +29,8 @@ Run locally with `node bin/slicer-copilot optimize <input.3mf> [options]`:
 - `-o, --output <file>` — choose output path (default `<input>.optimized.3mf`).
 - `--api-key <key>`, `--base-url <url>`, `--model <model>`, `--temperature <number>`, `--reasoning-effort <effort>` — configure the model request.
 - Groq requests use the full system prompt, complete formatted project JSON, and full plate previews. Generated output is capped at 900 tokens to fit the 1,000 OTPM quota reported for some service tiers; very complex output may be truncated.
+- Web UI includes an optional compact context mode (target 5,500 estimated input tokens) that preserves core print settings and user intent while dropping custom slice defaults and plate images from the API request; original images remain rendered. The full prompt inspection action returns the complete, uncompressed messages and image data URLs without API keys.
+- Web deployment: `src/web/api.js` contains shared API behavior, `src/web/server.js` serves the loopback UI, and `src/web/vercelHandler.js` adapts Vercel functions in `api/`. `npm run build` copies `web/` to `dist/`. Vercel accepts 3 MiB uploads and 4 MiB JSON responses; local upload cap remains 256 MiB. Restrict access when Vercel provider keys are configured.
 - `--force` — allow changing settings marked as user-modified.
 - `--verbose`, `--language <code>` — detailed prompt/payload logging and localized output.
 

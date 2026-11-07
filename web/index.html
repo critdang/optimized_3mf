@@ -14,7 +14,7 @@
         <span class="brand-mark">SC</span>
         <span>Slicer Copilot</span>
       </a>
-      <span class="local-badge"><span></span> Local only</span>
+      <span class="local-badge"><span></span> Local or hosted</span>
     </header>
 
     <main>
@@ -80,7 +80,7 @@
             type="password"
             autocomplete="off"
             spellcheck="false"
-            placeholder="Uses the key in local .env if blank"
+            placeholder="Uses the server key if blank"
           />
           <p class="helper">
             Key is used for this request only and is not saved by the web UI.
@@ -124,6 +124,27 @@
             placeholder="Describe the part, use case, or constraints…"
           ></textarea>
 
+          <div class="context-controls">
+            <label class="compact-toggle" for="compact-context">
+              <input id="compact-context" type="checkbox" />
+              <span class="toggle-copy">
+                <strong>Compact Context (Fit 7k Token Limit)</strong>
+                <span
+                  >Keep core print settings; omit custom defaults and preview
+                  images from the AI request.</span
+                >
+              </span>
+            </label>
+            <button
+              id="copy-prompt-button"
+              class="secondary-button"
+              type="button"
+              disabled
+            >
+              Copy Full Prompt for ChatGPT / Gemini
+            </button>
+          </div>
+
           <button
             id="optimize-button"
             class="primary-button"
@@ -155,6 +176,43 @@
         <div id="result-body"></div>
       </section>
       <div id="status" class="status" role="status" aria-live="polite"></div>
+      <dialog id="prompt-dialog" class="prompt-dialog">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">MANUAL FALLBACK</p>
+            <h2>Full optimization prompt</h2>
+          </div>
+          <button
+            id="close-prompt-button"
+            class="close-button"
+            type="button"
+            aria-label="Close prompt"
+          >
+            ×
+          </button>
+        </div>
+        <p class="dialog-description">
+          This is the complete, uncompressed prompt and project data. Plate
+          previews are included as full data URLs. Copy it and paste into
+          ChatGPT or Gemini; never include your API key.
+        </p>
+        <textarea
+          id="full-prompt"
+          class="prompt-textarea"
+          spellcheck="false"
+          aria-label="Complete prompt contents"
+        ></textarea>
+        <div class="dialog-actions">
+          <span id="copy-status" class="field-hint"></span>
+          <button
+            id="copy-prompt-confirm"
+            class="primary-button dialog-copy"
+            type="button"
+          >
+            Copy full prompt
+          </button>
+        </div>
+      </dialog>
       <footer>
         Runs on this computer · Review all settings in your slicer before
         printing

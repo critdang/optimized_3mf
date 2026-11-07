@@ -6,6 +6,8 @@ const modelInput = document.querySelector("#model");
 const goalInput = document.querySelector("#goal");
 const notesInput = document.querySelector("#notes");
 const optimizeButton = document.querySelector("#optimize-button");
+const compactContextInput = document.querySelector("#compact-context");
+const copyPromptButton = document.querySelector("#copy-prompt-button");
 const statusElement = document.querySelector("#status");
 const summariesElement = document.querySelector("#project-summary");
 const previewSection = document.querySelector("#preview-section");
@@ -14,14 +16,30 @@ const previewsElement = document.querySelector("#plate-previews");
 const resultsElement = document.querySelector("#results");
 const resultBody = document.querySelector("#result-body");
 const resultCaption = document.querySelector("#result-caption");
+const promptDialog = document.querySelector("#prompt-dialog");
+const fullPromptInput = document.querySelector("#full-prompt");
+const copyStatus = document.querySelector("#copy-status");
 
 let selectedFile = null;
 let project = null;
 let configuredKeys = { openai: false, groq: false };
+let maxUploadBytes = 256 * 1024 * 1024;
 
-function setStatus(message, state = "") {
-  statusElement.textContent = message;
+function setStatus(message, state = "", suggestions = []) {
+  statusElement.replaceChildren(document.createTextNode(message));
   statusElement.dataset.state = state;
+  for (const suggestion of suggestions) {
+    const button = element("button", "status-action", suggestion.label);
+    button.addEventListener("click", () => {
+      if (suggestion.action === "compact") {
+        compactContextInput.checked = true;
+        void optimize();
+      } else if (suggestion.action === "copy-prompt") {
+        void inspectFullPrompt();
+      }
+    });
+    statusElement.append(button);
+  }
 }
 
 function element(tagName, className, text) {
@@ -36,9 +54,11 @@ function updateProviderFields() {
   modelInput.value = provider === "groq" ? "qwen/qwen3.8-27b" : "gpt-4.1-mini";
   keyInput.value = "";
   keyInput.placeholder = configuredKeys[provider]
-    ? "Configured in local .env (or enter a different key)"
+    ? "Configured on server (or enter a different key)"
     : `Enter ${provider === "groq" ? "Groq" : "OpenAI"} API key`;
-  keyHint.textContent = configuredKeys[provider] ? "key available in .env" : "";
+  keyHint.textContent = configuredKeys[provider]
+    ? "key configured on server"
+    : "";
   keyInput.autocomplete = "new-password";
 }
 
@@ -47,6 +67,7 @@ async function loadSettings() {
   if (!response.ok) throw new Error("Could not load local server settings.");
   const settings = await response.json();
   configuredKeys = settings.configuredKeys;
+  maxUploadBytes = settings.maxUploadBytes ?? maxUploadBytes;
   providerInput.value = settings.provider;
   updateProviderFields();
   modelInput.value = settings.model;
@@ -115,8 +136,12 @@ async function postProject(endpoint, options = {}) {
     body: selectedFile,
   });
   const data = await response.json();
-  if (!response.ok)
-    throw new Error(data.error ?? `Request failed (${response.status}).`);
+  if (!response.ok) {
+    throw Object.assign(
+      new Error(data.error ?? `Request failed (${response.status}).`),
+      { suggestions: data.suggestions ?? [], code: data.code },
+    );
+  }
   return data;
 }
 
@@ -134,11 +159,19 @@ async function inspectFile(file) {
     setStatus("Choose a .3mf project file.", "error");
     return;
   }
+  if (file.size > maxUploadBytes) {
+    setStatus(
+      `This server accepts .3mf files up to ${(maxUploadBytes / (1024 * 1024)).toFixed(0)} MiB. Use the local web UI for larger projects.`,
+      "error",
+    );
+    return;
+  }
   setStatus("Reading project and extracting original plate previews…", "busy");
   try {
     project = await postProject("/api/inspect");
     renderProject(project);
     optimizeButton.disabled = false;
+    copyPromptButton.disabled = false;
     document.querySelector("#upload-subtitle").textContent =
       `${(file.size / (1024 * 1024)).toFixed(1)} MiB · Original file remains unchanged`;
     setStatus(
@@ -146,7 +179,7 @@ async function inspectFile(file) {
       "success",
     );
   } catch (error) {
-    setStatus(error.message, "error");
+    setStatus(error.message, "error", error.suggestions);
   }
 }
 
@@ -155,10 +188,31 @@ function renderResults(data) {
   resultCaption.textContent = data.outputWritten
     ? "An optimized project was written."
     : "Suggestions only — your uploaded project was not changed.";
-  if (data.globalRationale) {
-    resultBody.append(element("p", "rationale", data.globalRationale));
-  }
-  if (data.diffs.length === 0) {
+  renderRationale(data.globalRationale);
+  renderContextSummary(data.context);
+  renderDiffs(data.diffs);
+  renderWarnings(data.warnings);
+  resultsElement.classList.remove("hidden");
+}
+
+function renderRationale(rationale) {
+  if (rationale) resultBody.append(element("p", "rationale", rationale));
+}
+
+function renderContextSummary(context) {
+  if (context?.mode !== "compact") return;
+  const omitted = context.omitted;
+  resultBody.append(
+    element(
+      "p",
+      "context-summary",
+      `Compact context estimated at ${context.estimatedInputTokens.toLocaleString()} of ${context.targetInputTokens.toLocaleString()} tokens. Omitted ${omitted.customSettings} custom settings, ${omitted.objects} overflow objects, and ${omitted.plateImages} preview images from the AI request.`,
+    ),
+  );
+}
+
+function renderDiffs(diffs) {
+  if (diffs.length === 0) {
     resultBody.append(
       element(
         "p",
@@ -166,47 +220,51 @@ function renderResults(data) {
         "No applicable setting changes were suggested.",
       ),
     );
-  } else {
-    const list = element("div", "change-list");
-    for (const diff of data.diffs) {
-      const item = element("article", "change-card");
-      const header = element("div", "change-header");
-      header.append(
-        element("code", "parameter", diff.parameter),
-        element(
-          "span",
-          "change-value",
-          `${String(diff.from)}  →  ${String(diff.to)}`,
-        ),
-      );
-      item.append(
-        header,
-        element(
-          "p",
-          "change-reason",
-          diff.reason || "No explanation provided.",
-        ),
-      );
-      if (diff.target?.objectName) {
-        item.append(element("span", "change-target", diff.target.objectName));
-      }
-      list.append(item);
-    }
-    resultBody.append(list);
+    return;
   }
-  for (const warning of data.warnings) {
-    resultBody.append(element("p", "warning", warning));
+  const list = element("div", "change-list");
+  diffs.forEach((diff) => list.append(createDiffCard(diff)));
+  resultBody.append(list);
+}
+
+function createDiffCard(diff) {
+  const item = element("article", "change-card");
+  const header = element("div", "change-header");
+  header.append(
+    element("code", "parameter", diff.parameter),
+    element(
+      "span",
+      "change-value",
+      `${String(diff.from)}  →  ${String(diff.to)}`,
+    ),
+  );
+  item.append(
+    header,
+    element("p", "change-reason", diff.reason || "No explanation provided."),
+  );
+  if (diff.target?.objectName) {
+    item.append(element("span", "change-target", diff.target.objectName));
   }
-  resultsElement.classList.remove("hidden");
+  return item;
+}
+
+function renderWarnings(warnings) {
+  warnings.forEach((warning) =>
+    resultBody.append(element("p", "warning", warning)),
+  );
 }
 
 async function optimize() {
   if (!selectedFile || !project) return;
   optimizeButton.disabled = true;
-  optimizeButton.querySelector("span").textContent = "Analyzing full project…";
+  optimizeButton.querySelector("span").textContent = compactContextInput.checked
+    ? "Analyzing compact context…"
+    : "Analyzing full project…";
   resultsElement.classList.add("hidden");
   setStatus(
-    "Sending the complete settings, system prompt, and plate previews to the selected provider…",
+    compactContextInput.checked
+      ? "Preparing a compact prompt with core print settings; plate previews remain visible here but are omitted from this API request…"
+      : "Sending the complete settings, system prompt, and plate previews to the selected provider…",
     "busy",
   );
   const provider = providerInput.value;
@@ -217,6 +275,7 @@ async function optimize() {
       primary_goal: goalInput.value,
       free_text_description: notesInput.value.trim(),
     }),
+    "X-Slicer-Context": compactContextInput.checked ? "compact" : "full",
   };
   if (keyInput.value) headers["X-Api-Key"] = keyInput.value;
   try {
@@ -227,11 +286,54 @@ async function optimize() {
       "success",
     );
   } catch (error) {
-    setStatus(error.message, "error");
+    setStatus(error.message, "error", error.suggestions);
   } finally {
     optimizeButton.disabled = false;
     optimizeButton.querySelector("span").textContent =
       "Generate recommendations";
+  }
+}
+
+async function inspectFullPrompt() {
+  if (!selectedFile) return;
+  copyPromptButton.disabled = true;
+  copyStatus.textContent = "";
+  setStatus("Building the complete prompt for inspection…", "busy");
+  try {
+    const response = await postProject("/api/prompt", {
+      headers: {
+        "X-Slicer-Intent": JSON.stringify({
+          primary_goal: goalInput.value,
+          free_text_description: notesInput.value.trim(),
+        }),
+      },
+    });
+    fullPromptInput.value = JSON.stringify(
+      {
+        messages: response.messages,
+        response_format: response.responseFormat,
+      },
+      null,
+      2,
+    );
+    promptDialog.showModal();
+    setStatus("Full prompt is ready to inspect or copy.", "success");
+  } catch (error) {
+    setStatus(error.message, "error", error.suggestions);
+  } finally {
+    copyPromptButton.disabled = false;
+  }
+}
+
+async function copyFullPrompt() {
+  try {
+    await navigator.clipboard.writeText(fullPromptInput.value);
+    copyStatus.textContent = "Copied. Paste into ChatGPT or Gemini.";
+  } catch {
+    fullPromptInput.focus();
+    fullPromptInput.select();
+    copyStatus.textContent =
+      "Clipboard unavailable; prompt selected for manual copy.";
   }
 }
 
@@ -241,6 +343,13 @@ fileInput.addEventListener("change", () => {
 });
 providerInput.addEventListener("change", updateProviderFields);
 optimizeButton.addEventListener("click", () => void optimize());
+copyPromptButton.addEventListener("click", () => void inspectFullPrompt());
+document.querySelector("#close-prompt-button").addEventListener("click", () => {
+  promptDialog.close();
+});
+document.querySelector("#copy-prompt-confirm").addEventListener("click", () => {
+  void copyFullPrompt();
+});
 document.querySelectorAll(".suggestion").forEach((button) => {
   button.addEventListener("click", () => {
     providerInput.value = button.dataset.model;

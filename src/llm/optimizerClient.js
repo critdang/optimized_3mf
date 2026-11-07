@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { SYSTEM_PROMPT } from "./prompt.js";
 import { LLM_RESPONSE_FORMAT } from "./responseSchema.js";
 import { buildModelOptions } from "./modelOptions.js";
+import { buildCompactRequestMessages } from "./compactContext.js";
 import {
   parseLlmResponse,
   InvalidLlmResponseError,
@@ -20,13 +21,23 @@ import {
  * @param {{ debug?: (...args: any[]) => void } | undefined} options.logger
  * @returns {Promise<{ version: number, changes: any[], globalRationale: any, warnings: string[] }>}
  */
-export async function requestOptimization({ payload, config, logger }) {
+export async function requestOptimization({
+  payload,
+  config,
+  logger,
+  compact = false,
+}) {
+  const compactRequest = compact ? buildCompactRequestMessages(payload) : null;
+  const requestPayload = compact ? compactRequest.payload : payload;
+  const messages = compact
+    ? compactRequest.messages
+    : buildRequestMessages({ payload });
   if (config.mockResponsePath) {
     const mock = fs.readFileSync(config.mockResponsePath, "utf8");
     logger?.debug?.(
       `Using mock LLM response from file: ${config.mockResponsePath}`,
     );
-    return parseLlmResponse(mock);
+    return withContextMetadata(parseLlmResponse(mock), compactRequest);
   }
 
   if (!config.apiKey) {
@@ -41,12 +52,11 @@ export async function requestOptimization({ payload, config, logger }) {
   });
 
   const targetBase = config.baseURL ?? "https://api.openai.com/v1";
-  const messages = buildRequestMessages({ payload });
   logger?.debug?.(`LLM target ${targetBase} | model=${config.model}`);
   logger?.debug?.("System prompt:\n", messages[0].content.trim());
   logger?.debug?.(
     "User payload message:\n",
-    JSON.stringify(redactImages(payload), null, 2),
+    JSON.stringify(redactImages(requestPayload), null, 2),
   );
 
   const content = await callChatCompletion({
@@ -56,7 +66,7 @@ export async function requestOptimization({ payload, config, logger }) {
     logger,
   });
   try {
-    return parseLlmResponse(content);
+    return withContextMetadata(parseLlmResponse(content), compactRequest);
   } catch (error) {
     if (error instanceof InvalidLlmResponseError) {
       logger?.debug?.(`Invalid LLM response; raw content:\n${content}`);
@@ -70,6 +80,19 @@ export function buildRequestMessages({ payload }) {
     { role: "system", content: SYSTEM_PROMPT },
     buildUserMessage(payload),
   ];
+}
+
+function withContextMetadata(response, compactRequest) {
+  if (!compactRequest) return response;
+  return {
+    ...response,
+    context: {
+      mode: "compact",
+      estimatedInputTokens: compactRequest.estimatedInputTokens,
+      targetInputTokens: compactRequest.targetInputTokens,
+      omitted: compactRequest.omitted,
+    },
+  };
 }
 
 async function callChatCompletion({ client, config, messages, logger }) {
@@ -99,7 +122,10 @@ async function callChatCompletion({ client, config, messages, logger }) {
     return content;
   } catch (error) {
     logger?.debug?.(`LLM request failed: ${formatError(error)}`);
-    throw new Error(`LLM request failed: ${formatError(error)}`);
+    const requestError = new Error(`LLM request failed: ${formatError(error)}`);
+    requestError.statusCode = error?.status;
+    requestError.providerCode = error?.code;
+    throw requestError;
   }
 }
 

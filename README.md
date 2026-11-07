@@ -64,8 +64,8 @@ precedence. Groq requests cap generated output at 900 tokens to fit within the
 1,000 output-tokens-per-minute quota reported for some service tiers. If a
 particularly complex project produces truncated JSON, retry after the quota
 window resets or use a Groq tier with a higher limit. Groq requests also use a
-shorter system prompt and compact project JSON to reduce input-token usage;
-available plate preview images are still included.
+complete system prompt and formatted project JSON; plate preview images are
+included in full-context mode.
 
 ### Reasoning Models
 
@@ -131,7 +131,7 @@ npx slicer-copilot optimize input.3mf --language ru
 - `de` (German)
 - `zh` (Chinese)
 
-### Local Web UI
+### Web UI
 
 Start the local interface from the repository:
 
@@ -143,13 +143,53 @@ Open the printed `http://127.0.0.1:4173` address. Upload a `.3mf` to inspect its
 printer/settings and display the original plate preview images, then choose
 OpenAI or Groq, enter a model and (optionally) a per-request API key, and
 generate recommendations. The web server binds to loopback only; keys entered
-in the UI are sent only to that local server for the current request and are
-not stored. If the key field is blank, the corresponding key from `.env` is
-used. The uploaded project, complete system prompt, complete settings payload,
-and plate previews are sent to the selected provider during optimization.
+in the UI are sent to the server for the current request and are not stored.
+If the key field is blank, the corresponding server environment key is used.
+The uploaded project, complete system prompt, complete settings payload, and
+plate previews are sent to the selected provider during optimization.
 Recommendations do not modify the uploaded project or write an output file.
-Groq requests retain the full system prompt, full project JSON, and full plate
-images; lower Groq input-token quotas may still reject large projects.
+By default, the UI sends the complete system prompt, project settings, and
+plate previews. If Groq rejects the request for token limits, enable
+**Compact Context (Fit 7k Token Limit)** to keep core print settings while
+omitting custom slice defaults and preview images from the API request. The
+original preview remains visible in the UI. Compact mode targets an estimated
+5,500 input tokens; provider tokenization and account usage may differ.
+
+Use **Copy Full Prompt for ChatGPT / Gemini** to inspect and copy the full,
+uncompressed system prompt, project JSON, intent, and full-resolution preview
+data URLs for a manual workflow. The copied prompt contains project data and
+images, but not API keys. Groq `413` and `429` errors include buttons to retry
+compactly or open the full prompt.
+
+### Deploy to Vercel
+
+The repository includes Vercel serverless functions and a static frontend build.
+Deploy from the repository root with the Vercel CLI:
+
+```bash
+npm install
+npm run build
+npx vercel
+```
+
+In Vercel, use the repository root as the project root and set the production
+environment variables `OPENAI_API_KEY` and/or `GROQ_API_KEY` in Project
+Settings → Environment Variables. Redeploy after changing environment
+variables. The UI also accepts a per-request key without saving it. The
+`/api/inspect`, `/api/optimize`, `/api/prompt`, and `/api/settings` routes are
+serverless functions; `/api/inspect` rewrites to the parsing function. Static
+assets are built from `web/` into `dist/`.
+
+Vercel deployments accept `.3mf` uploads up to 3 MiB and limit JSON API
+responses to 4 MiB to stay within serverless request/response constraints.
+Larger projects can use the local UI, whose upload limit is 256 MiB. Full
+previews are returned and rendered for accepted files.
+
+**Protect public deployments.** If an API key is configured in Vercel, anyone
+who can reach the deployment may be able to invoke it and consume that key's
+quota. Enable Vercel Deployment Protection or otherwise restrict access; for
+an unrestricted public deployment, leave provider keys unset and have each
+user supply their own key in the UI.
 
 ## Optimization Goals
 

@@ -3,6 +3,9 @@ import globals from "globals";
 import sonarjs from "eslint-plugin-sonarjs";
 
 export default [
+  {
+    ignores: ["dist/**"],
+  },
   js.configs.recommended,
   {
     files: ["**/*.js"],

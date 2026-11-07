@@ -13,13 +13,13 @@ Purpose: Slicer Copilot loads a Bambu Studio `.3mf`, summarizes printer/filament
 
 ## Key Modules
 
-- `bin/slicer-copilot-web`, `src/web/server.js`, `web/` — loopback-only browser UI; inspects uploaded projects/previews and runs per-request OpenAI/Groq optimization without persisting keys or changing the uploaded file.
+- `bin/slicer-copilot-web`, `src/web/`, `web/` — local web server and shared API logic; `api/` exports Vercel serverless handlers and `scripts/build-web.js` builds static assets to `dist/`. Vercel accepts uploads up to 3 MiB (local server: 256 MiB); protect hosted deployments if server API keys are configured.
 - `src/cli.js` — Commander CLI: handles options, loads `.3mf`, intent, LLM call, diff printing, writing output. Supports `--dry-run`, `--non-interactive`, `--intent-file`, `--verbose`, `--mock-response`, `--force` (allows changing user-modified keys; `--override-user-settings` still supported), `--language` (localizes CLI output and requests localized LLM replies), env-based auto-confirm for tests. `--verbose` prints the system prompt and JSON payload. Console output uses `cli-table3` + `chalk` + `boxen` + `ora` with responsive columns, spinners, and colored diffs/JSON.
 - `src/3mf/parser.js` / `writer.js` — ZIP handling via JSZip. Parser normalizes printer/filament/settings and only includes plates/geometry when present in metadata (no fallback layout because the exports lack usable data). It also surfaces plate preview PNGs (`Metadata/plate_*.png`) for LLM vision input. Writer replaces metadata JSON while preserving other entries, and updates `different_settings_to_system` so Bambu Studio treats changed settings as profile overrides.
 - `src/apply/changes.js` — Applies LLM change set onto the normalized model (global + per-object overrides).
 - `src/llm/prompt.js` — System prompt for LLM with clear rules about geometry, output format, and an **explicit list of available parameters with descriptions** to prevent hallucinated parameter names.
 - `src/llm/requestBuilder.js` — Builds JSON payload combining project data, current settings, and sparse `intentDetails` (no empty/default noise; only meaningful user fields are included). Includes optional plate images.
-- `src/llm/optimizerClient.js` — OpenAI-compatible chat call with the complete system prompt and formatted project JSON, JSON response_format, and Groq completion cap at 900 tokens; plate images are retained in full.
+- `src/llm/optimizerClient.js` / `src/llm/compactContext.js` — full-context requests keep the complete system prompt, formatted project JSON, and plate images. Optional compact mode filters non-core settings, omits preview images, and targets 5,500 estimated input tokens while preserving core print settings.
 - `src/llm/modelOptions.js` — Exact-model Chat Completions parameter rules for `gpt-6.1-sol`, `gpt-6-sol`, and `gpt-6-luna`. Optional `--reasoning-effort` / `OPENAI_REASONING_EFFORT` accepts each model's documented values; unsupported combinations fail before HTTP. Omitted effort leaves the API default (medium) and omits temperature. Explicit `none` is only supported on Sol/Luna and preserves temperature. Other model names retain the existing temperature-only behavior without capability guessing.
 - `src/intent/intent.js` — Collects intent (interactive single-question arrow selector or JSON), normalizes goals/constraints, and prompts for optional free-text notes about the model. Primary goals now include `custom` (no presets; rely on user-provided notes/constraints).
 - `src/utils/summary.js` — Human-readable summary/diff formatting using `cli-table3` + `chalk` + `boxen` + `figures` (responsive tables, syntax-highlighted JSON, styled boxes for warnings/rationale).
@@ -57,6 +57,8 @@ Purpose: Slicer Copilot loads a Bambu Studio `.3mf`, summarizes printer/filament
 - No geometry edits.
 
 ## Testing & Coverage
+
+- Vercel deployment uses `npm run build`, with static files from `web/` copied to `dist/` and Node functions from `api/`. Configure provider secrets in Vercel; protect deployments when server-side keys are set.
 
 - Pull request CI (`.github/workflows/ci.yml`) runs tests, lint, and formatting checks on Node.js 24 with read-only repository permissions. Publishing remains in the separate tag-triggered workflow.
 
