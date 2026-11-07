@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+import "dotenv/config";
+import { startWebServer } from "../src/web/server.js";
+
+startWebServer();

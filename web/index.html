@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#111827" />
+    <title>Slicer Copilot</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Slicer Copilot home">
+        <span class="brand-mark">SC</span>
+        <span>Slicer Copilot</span>
+      </a>
+      <span class="local-badge"><span></span> Local only</span>
+    </header>
+
+    <main>
+      <section class="intro">
+        <p class="eyebrow">BAMBU STUDIO PROJECT OPTIMIZER</p>
+        <h1>Make your next print<br /><span>work better.</span></h1>
+        <p class="lede">
+          Review your project, its original plate previews, and suggested
+          settings before making any changes in your slicer.
+        </p>
+      </section>
+
+      <section class="workspace">
+        <div class="panel file-panel">
+          <div class="section-heading">
+            <span class="step">01</span>
+            <div>
+              <h2>Choose a project</h2>
+              <p>Upload a Bambu Studio .3mf file from this computer.</p>
+            </div>
+          </div>
+          <label class="upload-zone" for="project-file">
+            <input
+              id="project-file"
+              type="file"
+              accept=".3mf,application/vnd.ms-package.3dmanufacturing-3dmodel+xml"
+            />
+            <span class="upload-icon" aria-hidden="true">↑</span>
+            <strong id="upload-title">Drop a project here or browse</strong>
+            <span id="upload-subtitle"
+              >Your original file is not modified.</span
+            >
+          </label>
+          <div id="project-summary" class="project-summary hidden"></div>
+          <div id="preview-section" class="preview-section hidden">
+            <div class="subheading">
+              <h3>Plate previews</h3>
+              <span id="preview-count" class="count"></span>
+            </div>
+            <div id="plate-previews" class="plate-previews"></div>
+          </div>
+        </div>
+
+        <aside class="panel settings-panel">
+          <div class="section-heading">
+            <span class="step">02</span>
+            <div>
+              <h2>Optimization settings</h2>
+              <p>Provider and model are selected for each run.</p>
+            </div>
+          </div>
+          <label class="field-label" for="provider">AI provider</label>
+          <select id="provider">
+            <option value="openai">OpenAI</option>
+            <option value="groq">Groq</option>
+          </select>
+
+          <label class="field-label" for="api-key"
+            >API key <span id="key-hint" class="field-hint"></span
+          ></label>
+          <input
+            id="api-key"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Uses the key in local .env if blank"
+          />
+          <p class="helper">
+            Key is used for this request only and is not saved by the web UI.
+          </p>
+
+          <label class="field-label" for="model">Model name</label>
+          <input id="model" type="text" autocomplete="off" spellcheck="false" />
+          <div class="suggestions">
+            <button
+              type="button"
+              class="suggestion"
+              data-model="openai"
+              data-value="gpt-4.1-mini"
+            >
+              OpenAI default
+            </button>
+            <button
+              type="button"
+              class="suggestion"
+              data-model="groq"
+              data-value="qwen/qwen3.8-27b"
+            >
+              Groq vision + JSON
+            </button>
+          </div>
+
+          <label class="field-label" for="goal">Optimization goal</label>
+          <select id="goal">
+            <option value="balanced">Balanced</option>
+            <option value="functional_strong">Functional strength</option>
+            <option value="draft_fast">Faster print</option>
+            <option value="visual_quality">Visual quality</option>
+            <option value="custom">Custom</option>
+          </select>
+          <label class="field-label" for="notes"
+            >Notes <span class="optional">optional</span></label
+          >
+          <textarea
+            id="notes"
+            rows="3"
+            placeholder="Describe the part, use case, or constraints…"
+          ></textarea>
+
+          <button
+            id="optimize-button"
+            class="primary-button"
+            type="button"
+            disabled
+          >
+            <span>Generate recommendations</span
+            ><span aria-hidden="true">→</span>
+          </button>
+          <p class="helper privacy-note">
+            The project settings and full-resolution plate previews are sent to
+            the selected AI provider for analysis. No optimized file is written.
+          </p>
+        </aside>
+      </section>
+
+      <section
+        id="results"
+        class="panel results-panel hidden"
+        aria-live="polite"
+      >
+        <div class="section-heading">
+          <span class="step">03</span>
+          <div>
+            <h2>Recommendations</h2>
+            <p id="result-caption"></p>
+          </div>
+        </div>
+        <div id="result-body"></div>
+      </section>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <footer>
+        Runs on this computer · Review all settings in your slicer before
+        printing
+      </footer>
+    </main>
+  </body>
+</html>
